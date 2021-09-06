@@ -9,7 +9,7 @@ print("* recording")
 
 audio = bytes()
 
-for i in range(0, 50):
+for i in range(0, 5):
     data = stream.read()
     audio += data
 

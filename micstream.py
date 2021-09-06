@@ -61,6 +61,7 @@ class MicStream(object):
         self.stream_sample_rate = 44100
         self.output_sample_rate = 48000
         self.read_time = 0.02
+        self.edge_time = 0.005
 
     def is_active(self):
         return self.pyaudio_stream.is_active()
@@ -85,13 +86,17 @@ class MicStream(object):
             self.is_running = False
 
     def read(self):
-        samples_per_read = self.read_time * self.stream_sample_rate
         channel_count = 2
         bytes_per_sample = 3
-        bytes_per_read = int(samples_per_read * channel_count * bytes_per_sample)
+        edge_samples = int(self.edge_time * self.stream_sample_rate)
+        read_samples = int(self.read_time * self.stream_sample_rate)
+        resampled_read_samples = int(self.read_time * self.output_sample_rate)
+        edge_bytes = edge_samples * channel_count * bytes_per_sample
+        read_bytes = read_samples * channel_count * bytes_per_sample
+        total_bytes = edge_bytes + read_bytes
         while True:
-            if self.byte_buffer != None and len(self.byte_buffer) >= bytes_per_read:
-                raw_bytes = self.byte_buffer[0:bytes_per_read]
+            if len(self.byte_buffer) >= read_bytes:
+                raw_bytes = self.byte_buffer[0:read_bytes]
                 data_pcm_32 = pcm24_to_32(raw_bytes, channels=channel_count)
                 data_float = pcm_to_float(data_pcm_32)
                 data_float_resampled = librosa.resample(
@@ -100,13 +105,13 @@ class MicStream(object):
                     self.output_sample_rate,
                     res_type='kaiser_fast',
                     fix=False,
-                ).transpose()
+                )[:, 0:resampled_read_samples].transpose()
                 data_pcm_16 = float_to_pcm(data_float_resampled)
                 data_pcm_16_transposed = data_pcm_16.transpose()
                 data_pcm_16_left = data_pcm_16_transposed[0]
                 data_pcm_16_right = data_pcm_16_transposed[1]
                 interleaved_pcm = interleave_arrays(data_pcm_16_left, data_pcm_16_right)
-                self.byte_buffer = self.byte_buffer[bytes_per_read:]
+                self.byte_buffer = self.byte_buffer[read_bytes:]
                 return interleaved_pcm.tobytes()
 
     def _callback(self, in_data, frame_count, time_info, flag):
