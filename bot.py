@@ -1,29 +1,32 @@
 import asyncio
 import discord
 import pyaudio
+import librosa
+import numpy as np
 
 from discord.ext import commands
-
-pa = pyaudio.PyAudio()
+from micstream import MicStream
 
 class MicSource(discord.PCMAudio):
     def __init__(self):
-        self.chunk_size = 1024
-        self.stream = pa.open(format=pyaudio.paInt24,
-                              channels=2,
-                              rate=44100,
-                              input=True,
-                              frames_per_buffer=self.chunk_size)
+        self.stream = MicStream()
 
     def is_opus(self):
         return False
 
+    def start(self):
+        self.stream.start()
+
+    def stop(self):
+        self.stream.stop()
+
     def read(self):
-        return self.stream.read(self.chunk_size)
+        return self.stream.read()
 
 class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.mic_source = MicSource()
 
     @commands.command()
     async def join(self, ctx, *, channel: discord.VoiceChannel):
@@ -38,12 +41,14 @@ class Music(commands.Cog):
     async def monitor(self, ctx):
         """Enables voice monitoring."""
 
-        ctx.voice_client.play(MicSource(), after=lambda e: print(f'Player error: {e}') if e else None)
+        self.mic_source.start()
+        ctx.voice_client.play(self.mic_source, after=lambda e: print(f'Player error: {e}') if e else None)
 
     @commands.command()
     async def stop(self, ctx):
         """Stops and disconnects the bot from voice"""
 
+        self.mic_source.stop()
         await ctx.voice_client.disconnect()
 
     @monitor.before_invoke
@@ -66,4 +71,8 @@ async def on_ready():
     print('------')
 
 bot.add_cog(Music(bot))
-bot.run('token')
+
+with open('token.txt') as f:
+    token = f.read()
+
+bot.run(token)
