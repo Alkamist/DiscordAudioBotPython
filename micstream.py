@@ -90,13 +90,14 @@ class MicStream(object):
         bytes_per_sample = 3
         edge_samples = int(self.edge_time * self.stream_sample_rate)
         read_samples = int(self.read_time * self.stream_sample_rate)
+        resampled_edge_samples = int(self.edge_time * self.output_sample_rate)
         resampled_read_samples = int(self.read_time * self.output_sample_rate)
         edge_bytes = edge_samples * channel_count * bytes_per_sample
         read_bytes = read_samples * channel_count * bytes_per_sample
-        total_bytes = edge_bytes + read_bytes
+        total_bytes = 2 * edge_bytes + read_bytes
         while True:
-            if len(self.byte_buffer) >= read_bytes:
-                raw_bytes = self.byte_buffer[0:read_bytes]
+            if len(self.byte_buffer) >= total_bytes:
+                raw_bytes = self.byte_buffer[0:total_bytes]
                 data_pcm_32 = pcm24_to_32(raw_bytes, channels=channel_count)
                 data_float = pcm_to_float(data_pcm_32)
                 data_float_resampled = librosa.resample(
@@ -105,7 +106,8 @@ class MicStream(object):
                     self.output_sample_rate,
                     res_type='kaiser_fast',
                     fix=False,
-                )[:, 0:resampled_read_samples].transpose()
+                )[:, resampled_edge_samples:resampled_edge_samples+resampled_read_samples].transpose()
+                # ).transpose()
                 data_pcm_16 = float_to_pcm(data_float_resampled)
                 data_pcm_16_transposed = data_pcm_16.transpose()
                 data_pcm_16_left = data_pcm_16_transposed[0]
