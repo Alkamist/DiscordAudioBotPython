@@ -60,7 +60,12 @@ class MicStream(object):
         self.is_running = False
         self.stream_sample_rate = 44100
         self.output_sample_rate = 48000
+
+        # Discord expects 20 ms of audio per read.
         self.read_time = 0.02
+
+        # Put 5 ms of extra audio on each side
+        # to prevent clicks when resampling.
         self.edge_time = 0.005
 
     def is_active(self):
@@ -95,11 +100,16 @@ class MicStream(object):
         edge_bytes = edge_samples * channel_count * bytes_per_sample
         read_bytes = read_samples * channel_count * bytes_per_sample
         total_bytes = 2 * edge_bytes + read_bytes
+
         while True:
             if len(self.byte_buffer) >= total_bytes:
                 raw_bytes = self.byte_buffer[0:total_bytes]
                 data_pcm_32 = pcm24_to_32(raw_bytes, channels=channel_count)
                 data_float = pcm_to_float(data_pcm_32)
+
+                # The audio buffer has extra audio on each side, because if
+                # you don't do that, there will be audible clicks on the edges.
+                # The data also needs to be transposed before being sent to Librosa.
                 data_float_resampled = librosa.resample(
                     data_float.transpose(),
                     self.stream_sample_rate,
@@ -107,13 +117,14 @@ class MicStream(object):
                     res_type='kaiser_fast',
                     fix=False,
                 )[:, resampled_edge_samples:resampled_edge_samples+resampled_read_samples].transpose()
-                # ).transpose()
+
                 data_pcm_16 = float_to_pcm(data_float_resampled)
                 data_pcm_16_transposed = data_pcm_16.transpose()
                 data_pcm_16_left = data_pcm_16_transposed[0]
                 data_pcm_16_right = data_pcm_16_transposed[1]
                 interleaved_pcm = interleave_arrays(data_pcm_16_left, data_pcm_16_right)
                 self.byte_buffer = self.byte_buffer[read_bytes:]
+
                 return interleaved_pcm.tobytes()
 
     def _callback(self, in_data, frame_count, time_info, flag):
